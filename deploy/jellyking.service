@@ -1,0 +1,34 @@
+# /etc/systemd/system/jellyking.service
+# Install:   sudo cp deploy/jellyking.service /etc/systemd/system/
+#            sudo systemctl daemon-reload
+#            sudo systemctl enable --now jellyking
+[Unit]
+Description=Jellyking media-stack dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=jellyking
+Group=jellyking
+WorkingDirectory=/opt/jellyking
+# Where users.json / services.json / settings.json / encrypted credentials / keys live.
+Environment=DataDirectory=/var/lib/jellyking
+Environment=ASPNETCORE_ENVIRONMENT=Production
+Environment=DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false
+# Optional: bind a different port, enable TLS, etc.
+# Environment=JELLYKING__Server__Port=5656
+# Environment=JELLYKING__Security__UseHttps=false
+ExecStart=/opt/jellyking/Jellyking
+Restart=on-failure
+RestartSec=5
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/jellyking /opt/jellyking/logs
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

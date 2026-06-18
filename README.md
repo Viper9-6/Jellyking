@@ -8,7 +8,63 @@ A single-container media-stack dashboard that proxies your native service WebUIs
 - **Local access bypass** (optional) and **opt-in HTTPS**.
 - Expose it through **Cloudflare Tunnels** (or any reverse proxy) — the port never has to be public.
 
-## 1. Install on a Linux server (Docker)
+## 1. Install on a Linux server (Native, no Docker)
+
+Two ways: **self-contained** (no .NET runtime needed on the server — recommended) or **build on the server**.
+
+### Option A — Self-contained build (server needs nothing but Linux)
+
+Build on any machine with the .NET 10 SDK + Node 20 (e.g. your dev machine), then copy a single folder to the server.
+
+```bash
+# 1. Build the frontend into wwwroot
+cd frontend && npm install && npm run build && cd ..
+
+# 2. Publish self-contained for the server's architecture.
+#    Use linux-arm64 for Raspberry Pi / ARM servers.
+dotnet publish src/Jellyking.Host -c Release -r linux-x64 --self-contained true -o publish-linux
+
+# 3. Copy to the server
+rsync -avz publish-linux/  user@server:/opt/jellyking/
+scp deploy/jellyking.service user@server:/tmp/jellyking.service
+```
+
+On the server:
+```bash
+sudo useradd --system --home /opt/jellyking --shell /usr/sbin/nologin jellyking
+sudo mkdir -p /var/lib/jellyking /opt/jellyking/logs
+sudo chown -R jellyking:jellyking /var/lib/jellyking /opt/jellyking
+sudo install -m644 /tmp/jellyking.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now jellyking
+sudo systemctl status jellyking        # confirm "active (running)"
+# open http://<server-ip>:5656/ → create admin → Add Service
+```
+
+Back up `/var/lib/jellyking` — that's your accounts, services, settings, encrypted credentials, DataProtection keys, and (if you enable TLS) the self-signed cert.
+
+### Option B — Build directly on the server
+
+```bash
+# .NET 10 SDK + Node 20
+curl -fsSL https://dot.net/v1/dotnet-install.sh | bash -s -- --channel 10.0
+echo 'export PATH=$HOME/.dotnet:$PATH' >> ~/.bashrc && source ~/.bashrc
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo bash - && sudo apt-get install -y nodejs   # Debian/Ubuntu
+
+git clone https://github.com/Viper9-6/Jellyking.git && cd Jellyking
+cd frontend && npm install && npm run build && cd ..
+dotnet publish src/Jellyking.Host -c Release -o /opt/jellyking
+# then create the user + install the systemd unit as in Option A, with
+# ExecStart=/opt/jellyking/Jellyking and the .NET runtime on PATH
+```
+
+For Option B the build is **framework-dependent**, so the server needs the ASP.NET Core 10 runtime present (the SDK install above provides it). Option A bundles the runtime, so the server needs nothing.
+
+> Run it behind **Cloudflare Tunnel** (or any reverse proxy) instead of opening port 5656 — see §5. Keep `JELLYKING__Security__UseHttps=false` when behind a tunnel, and keep "Local access (no login)" OFF (see the warning in §5 — the tunnel connects from localhost).
+
+---
+
+## 2. Install on a Linux server (Docker)
 
 ```bash
 # Docker + compose (Debian/Ubuntu)
@@ -39,7 +95,7 @@ docker compose up -d
 ```
 In bridge mode you add each service in the Jellyking UI using the **compose service name** (e.g. `sonarr`) as the host, on its container port.
 
-## 2. Add a service
+## 3. Add a service
 
 In the UI: **Dashboard → Add Service**. Pick a template (or Blank) and fill in:
 
@@ -51,11 +107,11 @@ In the UI: **Dashboard → Add Service**. Pick a template (or Blank) and fill in
 | Port         | `8989`                 | The service's port                                                 |
 | Base Path    | `/sonarr`              | The subpath Jellyking serves it on — **must match the service's own URL Base** |
 | Health Path  | `/sonarr/api/v3/system/status` | HTTP GET path that returns 2xx when the service is up     |
-| Auto-login   | see §3                 | Optional credential so the WebUI opens signed in                  |
+| Auto-login   | see §4                 | Optional credential so the WebUI opens signed in                  |
 
 Saved services are probed every ~30s; only **up** services are reachable through the proxy. Cards open the WebUI through Jellyking at `http://<host>:5656<base path>/`.
 
-## 3. One-time per-service setup (base URL + credential)
+## 4. One-time per-service setup (base URL + credential)
 
 Each *arr must be told it's served from its subpath, then restarted **once**:
 
@@ -87,7 +143,7 @@ Each *arr must be told it's served from its subpath, then restarted **once**:
 
 > Secrets are encrypted at rest with ASP.NET Core Data Protection and never returned by the API.
 
-## 4. Expose via Cloudflare Tunnel (recommended)
+## 5. Expose via Cloudflare Tunnel (recommended)
 
 The port never needs to be public — run `cloudflared` on the server and point it at Jellyking:
 
@@ -106,7 +162,7 @@ Cloudflare terminates TLS, so **leave `JELLYKING__Security__UseHttps=false`** wh
 
 > ⚠️ **Keep "Local access (no login)" OFF when using a tunnel.** That bypass treats any loopback connection as admin. `cloudflared` connects to `http://localhost:5656` from the server itself, so with the bypass on, every internet request through the tunnel would be treated as admin — bypassing your login. Leave it off and rely on the admin account (and optionally a Cloudflare Access policy in front).
 
-## 5. Configuration
+## 6. Configuration
 
 Via `appsettings.json` or `JELLYKING__Section__Key` env vars (double-underscore separates sections):
 
@@ -120,13 +176,13 @@ DataDirectory=/data                          # top-level key (not under Jellykin
 
 The `Jellyking` config section: `Server` (Host, Port), `Detection` (TargetHost, IntervalSeconds, TimeoutMs), `Ui` (Theme, Title), `Security` (UseHttps, HttpPort, HttpsPort, CertPath, CertPassword, Hsts).
 
-## 6. Accounts & security
+## 7. Accounts & security
 
 - First run → create admin. **Settings → Users** (admin only): add users, change roles, reset a user's password, delete.
 - Header menu → **Change password** for self-service password change.
 - **Local access (no login)** toggle in Settings → General — see the Cloudflare warning above.
 
-## 7. Development
+## 8. Development
 
 Requires .NET 10 SDK and Node.js 20+.
 
@@ -143,7 +199,7 @@ dotnet publish src/Jellyking.Host -c Release -o publish
 ./publish/Jellyking
 ```
 
-## 8. Troubleshooting
+## 9. Troubleshooting
 
 - **Service shows offline / "port_closed"** — wrong host/port, or the service's base URL doesn't match Jellyking's Base Path. Fix the base URL on the service and restart it.
 - **403 on qBittorrent actions** — disable Host header validation in qBittorrent WebUI options.
