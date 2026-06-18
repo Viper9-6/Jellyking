@@ -15,10 +15,12 @@ The easy way is the prebuilt binary — exactly how Sonarr ships: download a sel
 ### Option A — Prebuilt binary (recommended, Sonarr-style)
 
 ```bash
-# On the server. For a private repo you need auth: either
-#   sudo apt-get install -y gh  &&  gh auth login
+# On the server. The repo is private, so authenticate first:
+#   sudo apt-get install -y gh  &&  gh auth login      # recommended
 # or  export GH_TOKEN=<github-token with repo scope>
-curl -fsSL https://raw.githubusercontent.com/Viper9-6/Jellyking/main/deploy/install-native.sh -o install-native.sh
+#
+# Fetch the installer (gh works for private repos; raw URLs would 401):
+gh api repos/Viper9-6/Jellyking/contents/deploy/install-native.sh --jq '.content' | base64 -d > install-native.sh
 sudo bash install-native.sh            # latest release
 # sudo bash install-native.sh v0.1.0   # pin a specific version
 ```
