@@ -10,55 +10,60 @@ A single-container media-stack dashboard that proxies your native service WebUIs
 
 ## 1. Install on a Linux server (Native, no Docker)
 
-Two ways: **self-contained** (no .NET runtime needed on the server — recommended) or **build on the server**.
+The easy way is the prebuilt binary — exactly how Sonarr ships: download a self-contained release (the .NET runtime is bundled, so the server needs nothing but Linux), run one install script, and you have a persistent systemd service. Building from source is a fallback.
 
-### Option A — Self-contained build (server needs nothing but Linux)
-
-Build on any machine with the .NET 10 SDK + Node 20 (e.g. your dev machine), then copy a single folder to the server.
+### Option A — Prebuilt binary (recommended, Sonarr-style)
 
 ```bash
-# 1. Build the frontend into wwwroot
-cd frontend && npm install && npm run build && cd ..
-
-# 2. Publish self-contained for the server's architecture.
-#    Use linux-arm64 for Raspberry Pi / ARM servers.
-dotnet publish src/Jellyking.Host -c Release -r linux-x64 --self-contained true -o publish-linux
-
-# 3. Copy to the server
-rsync -avz publish-linux/  user@server:/opt/jellyking/
-scp deploy/jellyking.service user@server:/tmp/jellyking.service
+# On the server. For a private repo you need auth: either
+#   sudo apt-get install -y gh  &&  gh auth login
+# or  export GH_TOKEN=<github-token with repo scope>
+curl -fsSL https://raw.githubusercontent.com/Viper9-6/Jellyking/main/deploy/install-native.sh -o install-native.sh
+sudo bash install-native.sh            # latest release
+# sudo bash install-native.sh v0.1.0   # pin a specific version
 ```
 
-On the server:
+The script: detects your architecture (`linux-x64` or `linux-arm64`), downloads the matching `jellyking-linux-<arch>.tar.gz` from the GitHub **Releases** page, extracts it to `/opt/jellyking`, creates a `jellyking` system user, installs `jellyking.service`, and runs `systemctl enable --now jellyking`.
+
+```bash
+systemctl status jellyking          # → active (running)
+# open http://<server-ip>:5656/ → create admin → Add Service
+```
+
+**Back up `/var/lib/jellyking`** — your accounts, services, settings, encrypted credentials, DataProtection keys, and (if TLS is on) the self-signed cert all live there. The app itself is in `/opt/jellyking` and is safely replaced on each upgrade; the install script backs up the previous install to `/opt/jellyking.bak.<timestamp>`.
+
+### Option B — Self-contained build from source (server needs nothing but Linux)
+
+Build on a machine with the .NET 10 SDK + Node 20, then copy one folder:
+
+```bash
+cd frontend && npm install && npm run build && cd ..
+dotnet publish src/Jellyking.Host -c Release -r linux-x64 --self-contained true -o publish-linux
+# linux-arm64 for Raspberry Pi / ARM servers
+rsync -avz publish-linux/ user@server:/opt/jellyking/
+scp deploy/jellyking.service user@server:/tmp/jellyking.service
+```
+Then create the user, install the unit, and start it (the same steps the install script performs):
+
 ```bash
 sudo useradd --system --home /opt/jellyking --shell /usr/sbin/nologin jellyking
 sudo mkdir -p /var/lib/jellyking /opt/jellyking/logs
 sudo chown -R jellyking:jellyking /var/lib/jellyking /opt/jellyking
 sudo install -m644 /tmp/jellyking.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now jellyking
-sudo systemctl status jellyking        # confirm "active (running)"
-# open http://<server-ip>:5656/ → create admin → Add Service
+sudo systemctl daemon-reload && sudo systemctl enable --now jellyking
 ```
 
-Back up `/var/lib/jellyking` — that's your accounts, services, settings, encrypted credentials, DataProtection keys, and (if you enable TLS) the self-signed cert.
-
-### Option B — Build directly on the server
+### Option C — Build directly on the server (framework-dependent; needs .NET 10 runtime)
 
 ```bash
-# .NET 10 SDK + Node 20
 curl -fsSL https://dot.net/v1/dotnet-install.sh | bash -s -- --channel 10.0
 echo 'export PATH=$HOME/.dotnet:$PATH' >> ~/.bashrc && source ~/.bashrc
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo bash - && sudo apt-get install -y nodejs   # Debian/Ubuntu
-
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo bash - && sudo apt-get install -y nodejs
 git clone https://github.com/Viper9-6/Jellyking.git && cd Jellyking
 cd frontend && npm install && npm run build && cd ..
 dotnet publish src/Jellyking.Host -c Release -o /opt/jellyking
-# then create the user + install the systemd unit as in Option A, with
-# ExecStart=/opt/jellyking/Jellyking and the .NET runtime on PATH
+# then create the user + install the systemd unit as in Option B
 ```
-
-For Option B the build is **framework-dependent**, so the server needs the ASP.NET Core 10 runtime present (the SDK install above provides it). Option A bundles the runtime, so the server needs nothing.
 
 > Run it behind **Cloudflare Tunnel** (or any reverse proxy) instead of opening port 5656 — see §5. Keep `JELLYKING__Security__UseHttps=false` when behind a tunnel, and keep "Local access (no login)" OFF (see the warning in §5 — the tunnel connects from localhost).
 
