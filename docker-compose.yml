@@ -1,0 +1,37 @@
+---
+# Jellyking — host networking variant
+#
+# Use this when Jellyking and your *arr services run directly on the host
+# (bare metal or a VM) or when all containers share host networking.
+# Services are detected via localhost on their standard ports.
+#
+# For bridge/Docker Compose stack usage, see docker-compose.bridge.yml
+
+name: jellyking
+
+services:
+  jellyking:
+    # No published image yet — build from the Dockerfile in this repo.
+    build: .
+    container_name: jellyking
+    network_mode: host          # shares host network stack — services on localhost
+    environment:
+      # DataDirectory=/data is also set in the Dockerfile; repeat here for clarity.
+      - DataDirectory=/data
+      # Override appsettings.json with env vars. Format: JELLYKING__Section__Key
+      - JELLYKING__Server__Port=5656
+      - JELLYKING__Detection__TargetHost=localhost
+      - JELLYKING__Detection__IntervalSeconds=30
+      # Enable TLS (opt-in). When true, HTTP :5656 redirects to HTTPS :5657
+      # using an auto-generated self-signed cert in /data/jellyking.pfx.
+      # - JELLYKING__Security__UseHttps=true
+    volumes:
+      # Persist accounts, services, encrypted credentials, keys, TLS cert.
+      - ./jellyking-data:/data
+      - ./jellyking-data/logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:5656/api/v1/health"]
+      interval: 30s
+      timeout:  5s
+      retries:  3

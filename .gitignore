@@ -1,0 +1,59 @@
+# ============================================================
+# Build output
+# ============================================================
+**/bin/
+**/obj/
+publish/
+frontend/dist/
+*.user
+*.suo
+
+# ============================================================
+# Dependencies
+# ============================================================
+**/node_modules/
+frontend/package-lock.json.disabled
+
+# ============================================================
+# Runtime data — NEVER commit (contains accounts, encrypted
+# service credentials, DataProtection keys, TLS cert + password)
+# ============================================================
+data/
+**/data/
+jellyking-data/
+**/jellyking-data/
+*.pfx
+*.pfx.pwd
+keys/
+**/keys/
+
+# ============================================================
+# Logs
+# ============================================================
+logs/
+**/logs/
+*.log
+jellyking.log
+mock-services.log
+
+# ============================================================
+# OS / editor cruft
+# ============================================================
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# ============================================================
+# Downloaded installers (not part of the project)
+# ============================================================
+dotnet-install.sh
+
+# ============================================================
+# Internal dev/handoff notes (not for the published repo)
+# ============================================================
+CONTEXT.md
+CONTEXT_CURRENT.md
+PROJECT_STATE.md
+screenshot.png

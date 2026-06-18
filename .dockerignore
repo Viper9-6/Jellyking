@@ -1,0 +1,12 @@
+**/.git
+**/.gitignore
+**/node_modules
+**/dist
+**/*.user
+**/bin
+**/obj
+**/logs
+jellyking-data
+docker-compose.bridge.yml
+README.md
+.DS_Store

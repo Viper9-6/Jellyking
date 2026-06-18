@@ -1,0 +1,132 @@
+---
+# Jellyking — bridge networking variant
+#
+# Use this when Jellyking runs alongside your *arr services in the same
+# Docker Compose stack. Each service is referenced by its Docker service name
+# rather than localhost.
+#
+# Add this file to your existing media stack compose file, or merge the
+# jellyking service block into your existing compose.
+
+name: media-stack
+
+services:
+  jellyking:
+    # Build first:  docker build -t jellyking .
+    image: jellyking:latest
+    container_name: jellyking
+    ports:
+      - "5656:5656"
+    environment:
+      - DataDirectory=/data
+      # In bridge mode you add each service in Jellyking's UI using the Docker
+      # service name (e.g. "sonarr") as the host, on its container port.
+      - JELLYKING__Detection__TargetHost=sonarr   # default fallback host
+    volumes:
+      - jellyking-config:/data
+      - jellyking-logs:/app/logs
+    networks:
+      - media-net
+    restart: unless-stopped
+    depends_on:
+      - sonarr
+      - radarr
+
+  # ---------------------------------------------------------------- #
+  # Your existing services below — add Jellyking's network to each.  #
+  # ---------------------------------------------------------------- #
+
+  sonarr:
+    image: linuxserver/sonarr:latest
+    container_name: sonarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/London
+    volumes:
+      - sonarr-config:/config
+      - /path/to/media:/media
+    ports:
+      - "8989:8989"
+    networks:
+      - media-net
+    restart: unless-stopped
+
+  radarr:
+    image: linuxserver/radarr:latest
+    container_name: radarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/London
+    volumes:
+      - radarr-config:/config
+      - /path/to/media:/media
+    ports:
+      - "7878:7878"
+    networks:
+      - media-net
+    restart: unless-stopped
+
+  prowlarr:
+    image: linuxserver/prowlarr:latest
+    container_name: prowlarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/London
+    volumes:
+      - prowlarr-config:/config
+    ports:
+      - "9696:9696"
+    networks:
+      - media-net
+    restart: unless-stopped
+
+  jellyfin:
+    image: linuxserver/jellyfin:latest
+    container_name: jellyfin
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/London
+    volumes:
+      - jellyfin-config:/config
+      - /path/to/media:/media
+    ports:
+      - "8096:8096"
+    networks:
+      - media-net
+    restart: unless-stopped
+
+  qbittorrent:
+    image: linuxserver/qbittorrent:latest
+    container_name: qbittorrent
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/London
+      - WEBUI_PORT=8080
+    volumes:
+      - qbit-config:/config
+      - /path/to/downloads:/downloads
+    ports:
+      - "8080:8080"
+      - "6881:6881"
+      - "6881:6881/udp"
+    networks:
+      - media-net
+    restart: unless-stopped
+
+networks:
+  media-net:
+    driver: bridge
+
+volumes:
+  jellyking-config:
+  jellyking-logs:
+  sonarr-config:
+  radarr-config:
+  prowlarr-config:
+  jellyfin-config:
+  qbit-config:
