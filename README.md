@@ -1,35 +1,67 @@
 # Jellyking ♔
 
-A zero-config media stack dashboard that replaces the Organizr + Caddy/nginx setup with a single container.
+A single-container media-stack dashboard that proxies your native service WebUIs (Jellyfin, qBittorrent, Sonarr, Radarr, Prowlarr, Lidarr, Readarr, Bazarr, Jellyseerr, SABnzbd) through one origin using [YARP](https://learn.microsoft.com/aspnet/core/fundamentals/servers/yarp/) — **no iframes**, no per-service reverse-proxy config.
 
-Jellyking proxies your native service WebUIs (Jellyfin, qBittorrent, Sonarr, Radarr, …) through one origin using YARP — no iframes — and presents them in a clean tabbed UI. Services are added at runtime from the admin UI (any host + port + base path), and optional per-service auto-login injects stored credentials so each WebUI opens already signed in.
+- **Add services at runtime** from the admin UI — any host + port + base path, multiple instances allowed (e.g. two Radarrs on different ports).
+- **Auto-login / credential manager** — store an API key or qBittorrent login so each WebUI opens already signed in (secrets encrypted at rest).
+- **Accounts & users** — first-run admin setup, login, self-service password change, admin user management.
+- **Local access bypass** (optional) and **opt-in HTTPS**.
+- Expose it through **Cloudflare Tunnels** (or any reverse proxy) — the port never has to be public.
 
-## Quick Start (Docker)
-
-The image isn't published, so build it from this repo:
+## 1. Install on a Linux server (Docker)
 
 ```bash
-git clone <your-repo-url> Jellyking && cd Jellyking
+# Docker + compose (Debian/Ubuntu)
+curl -fsSL https://get.docker.com | sh
+sudo usermod -aG docker "$USER"   # log out and back in afterwards
+
+# Clone the private repo (authenticate with a token or SSH key)
+git clone https://github.com/Viper9-6/Jellyking.git
+cd Jellyking
+
+# Build and run (host networking — services discovered on localhost)
 docker compose up -d --build
 ```
 
-Open **http://localhost:5656/** — on first launch you're prompted to **create the admin account**. Then use **Add Service** to point Jellyking at each running service.
+Open **http://<server-ip>:5656/** → you're prompted to **create the admin account**. That's it for the host.
 
-`docker-compose.yml` uses host networking (services discovered on `localhost`). If your *arr stack is itself a Docker Compose stack, use `docker-compose.bridge.yml` instead (build first with `docker build -t jellyking .`, then reach services by their compose service name).
+`docker compose up -d --build` builds the image from `Dockerfile` and mounts `./jellyking-data:/data`. **Back up `./jellyking-data/`** — it holds your accounts, configured services, settings, encrypted credentials, DataProtection keys, and the TLS cert.
 
-### What gets persisted
+> The repo is private, so `git clone` needs credentials: a [Personal Access Token](https://github.com/settings/tokens) (`https://<token>@github.com/Viper9-6/Jellyking.git`) or an SSH remote. On the server you can also just copy the folder over.
 
-`docker-compose.yml` mounts `./jellyking-data:/data`. That directory holds your accounts, configured services, settings, **encrypted** service credentials, the DataProtection keys, and the self-signed TLS cert — back it up; don't delete it.
+### Bridge networking (if your *arr stack is itself a compose stack)
 
-## First-run setup
+```bash
+docker build -t jellyking .
+cp docker-compose.bridge.yml docker-compose.yml
+# edit service hosts to match your compose service names, then:
+docker compose up -d
+```
+In bridge mode you add each service in the Jellyking UI using the **compose service name** (e.g. `sonarr`) as the host, on its container port.
 
-1. Open `http://<host>:5656/` → create the admin username + password.
-2. **Add Service** (admin): pick a template or Blank, set Host, Port, Base Path (the subpath Jellyking serves it on, e.g. `/sonarr`), Health Path, and (optional) auto-login credentials.
-3. Each service must be told it's served from that subpath (one-time), then restarted:
+## 2. Add a service
 
-| Service     | Setting location                                | Value          |
-|-------------|-------------------------------------------------|----------------|
-| Jellyfin    | Dashboard → Networking → Base URL               | `/jellyfin`    |
+In the UI: **Dashboard → Add Service**. Pick a template (or Blank) and fill in:
+
+| Field        | Example                | What it is                                                        |
+|--------------|------------------------|-------------------------------------------------------------------|
+| Slug         | `sonarr`               | Unique key; becomes the URL path and the tab id                   |
+| Name         | `Sonarr`               | Display name                                                      |
+| Host         | `localhost` / `sonarr` | Hostname/IP of the service (localhost on host net, compose name in bridge) |
+| Port         | `8989`                 | The service's port                                                 |
+| Base Path    | `/sonarr`              | The subpath Jellyking serves it on — **must match the service's own URL Base** |
+| Health Path  | `/sonarr/api/v3/system/status` | HTTP GET path that returns 2xx when the service is up     |
+| Auto-login   | see §3                 | Optional credential so the WebUI opens signed in                  |
+
+Saved services are probed every ~30s; only **up** services are reachable through the proxy. Cards open the WebUI through Jellyking at `http://<host>:5656<base path>/`.
+
+## 3. One-time per-service setup (base URL + credential)
+
+Each *arr must be told it's served from its subpath, then restarted **once**:
+
+| Service     | Where to set the base URL                       | Value          |
+|-------------|--------------------------------------------------|----------------|
+| Jellyfin    | Dashboard → Networking → Base URL              | `/jellyfin`    |
 | Sonarr      | Settings → General → URL Base                   | `/sonarr`      |
 | Radarr      | Settings → General → URL Base                   | `/radarr`      |
 | Prowlarr    | Settings → General → URL Base                   | `/prowlarr`    |
@@ -40,68 +72,84 @@ Open **http://localhost:5656/** — on first launch you're prompted to **create 
 | qBittorrent | Tools → Options → Web UI → `WEBUI_ROOTPATH`     | `/qbit`        |
 | SABnzbd     | Config → General → URL Base                     | `/sabnzbd`     |
 
-You can run **multiple instances** (e.g. two Radarrs) by adding each with a unique slug, port, and base path.
+### Auto-login credential (set when adding/editing the service)
 
-## Auto-login (credential manager)
+| Auth type in Jellyking | Services                                         | Where to find the secret                                   |
+|------------------------|--------------------------------------------------|------------------------------------------------------------|
+| **API Key**            | Sonarr, Radarr, Prowlarr, Lidarr, Readarr, Bazarr, Jellyseerr, SABnzbd | Settings → General → **API Key** (SABnzbd: Config → General → API Key) |
+| **Jellyfin Token**     | Jellyfin                                         | Dashboard → **API Keys** → create a key                    |
+| **qBittorrent**        | qBittorrent                                      | qBittorrent **username + password** (WebUI login)         |
 
-When adding or editing a service, choose an authentication type so the WebUI loads already signed in (secrets are encrypted at rest with ASP.NET Core Data Protection):
+- **API Key** is sent as the `X-Api-Key` header on every proxied request, so the *arr WebUI loads already authenticated.
+- **qBittorrent** does a server-side login with your username + password, caches the `SID` cookie (~20 min), and injects it on proxied requests.
+  - qBittorrent also requires **WebUI → Host header validation** to be **disabled** (or the proxy origin allowed) in its Options → WebUI, otherwise POSTs return `403` even with a valid session.
+- **Jellyfin**: the stored token authenticates API calls, but the Jellyfin WebUI's own login screen is gated client-side. Full single sign-on needs the [Jellyfin SSO plugin](https://github.com/9p3/jellyfin-plugin-sso) (trusted header) — the token option is a fallback.
 
-- **API Key** (`X-Api-Key`) — Sonarr, Radarr, Prowlarr, Lidarr, Readarr, Bazarr, Jellyseerr, SABnzbd.
-- **Jellyfin Token** (`X-Emby-Token`) — authenticates Jellyfin API calls.
-- **qBittorrent (username + password)** — Jellyking performs a server-side login, caches the `SID` cookie, and injects it on every proxied request.
+> Secrets are encrypted at rest with ASP.NET Core Data Protection and never returned by the API.
 
-Notes:
-- qBittorrent behind a reverse proxy also needs **WebUI → Host header validation** disabled (or the proxy origin allowed) in qBittorrent's settings, otherwise POSTs return 403.
-- Full Jellyfin WebUI single sign-on needs the Jellyfin SSO plugin (trusted header); the stored token alone authenticates API calls but the WebUI login screen is client-gated.
+## 4. Expose via Cloudflare Tunnel (recommended)
 
-## Accounts & security
-
-- First-run admin setup, login, logout, self-service password change, and admin user management (create / change role / reset password / delete) are all in **Settings → Users**.
-- **Local access (no login)** toggle in Settings → General: when on, loopback requests are treated as an admin without a password. Great for a single-user machine; keep it off if the port is reachable beyond the host.
-
-## TLS / HTTPS (opt-in)
-
-Plain HTTP by default. To enable HTTPS (auto-generates a self-signed cert into `data/`):
+The port never needs to be public — run `cloudflared` on the server and point it at Jellyking:
 
 ```bash
-JELLYKING__Security__UseHttps=true   # env var, or Jellyking:Security:UseHttps in appsettings.json
+# install cloudflared, then (quick tunnel for testing):
+cloudflared tunnel --url http://localhost:5656
+
+# or a named tunnel you route to jellyking.<your-domain>:
+cloudflared tunnel create jellyking
+cloudflared tunnel route dns jellyking jellyking.example.com
+# config.yml → ingress: hostname: jellyking.example.com  service: http://localhost:5656
+cloudflared tunnel run jellyking
 ```
 
-HTTP on `5656` then 307-redirects to HTTPS on `5657`, with HSTS and a `Secure` auth cookie. For a real domain, put Jellyking behind Caddy/Traefik/nginx with a real certificate instead.
+Cloudflare terminates TLS, so **leave `JELLYKING__Security__UseHttps=false`** when behind a tunnel.
 
-## Configuration
+> ⚠️ **Keep "Local access (no login)" OFF when using a tunnel.** That bypass treats any loopback connection as admin. `cloudflared` connects to `http://localhost:5656` from the server itself, so with the bypass on, every internet request through the tunnel would be treated as admin — bypassing your login. Leave it off and rely on the admin account (and optionally a Cloudflare Access policy in front).
+
+## 5. Configuration
 
 Via `appsettings.json` or `JELLYKING__Section__Key` env vars (double-underscore separates sections):
 
 ```bash
 JELLYKING__Server__Port=5656
 JELLYKING__Detection__IntervalSeconds=30
-JELLYKING__Security__UseHttps=true
-DataDirectory=/data          # top-level key (not under Jellyking:)
+JELLYKING__Detection__TimeoutMs=2000
+JELLYKING__Security__UseHttps=false        # opt-in HTTPS (self-signed) if not behind a tunnel
+DataDirectory=/data                          # top-level key (not under Jellyking:)
 ```
 
-## Development
+The `Jellyking` config section: `Server` (Host, Port), `Detection` (TargetHost, IntervalSeconds, TimeoutMs), `Ui` (Theme, Title), `Security` (UseHttps, HttpPort, HttpsPort, CertPath, CertPassword, Hsts).
+
+## 6. Accounts & security
+
+- First run → create admin. **Settings → Users** (admin only): add users, change roles, reset a user's password, delete.
+- Header menu → **Change password** for self-service password change.
+- **Local access (no login)** toggle in Settings → General — see the Cloudflare warning above.
+
+## 7. Development
 
 Requires .NET 10 SDK and Node.js 20+.
 
 ```bash
-# Backend
+# Backend (http://localhost:5656)
 cd src/Jellyking.Host && dotnet run
 
-# Frontend (dev server on :3000 with HMR, proxies API + service paths to :5656)
+# Frontend dev server (http://localhost:3000, HMR, proxies API + service paths to :5656)
 cd frontend && npm install && npm run dev
 
-# Production build: frontend into wwwroot, then publish
+# Production build
 cd frontend && npm run build && cd ..
 dotnet publish src/Jellyking.Host -c Release -o publish
 ./publish/Jellyking
 ```
 
+## 8. Troubleshooting
+
+- **Service shows offline / "port_closed"** — wrong host/port, or the service's base URL doesn't match Jellyking's Base Path. Fix the base URL on the service and restart it.
+- **403 on qBittorrent actions** — disable Host header validation in qBittorrent WebUI options.
+- **Lost admin / settings after `docker compose down`** — the `./jellyking-data:/data` mount is missing. Re-add it and restart.
+- **"Cannot create service: slug exists"** — slugs must be unique; use distinct slugs/ports for multiple instances of the same app.
+
 ## Stack
 
-- **Backend:** ASP.NET Core 10 (`src/Jellyking.Host` + `src/Jellyking.Core`)
-- **Reverse proxy:** YARP 2.3
-- **Auth:** cookie auth with Admin/User policies + optional localhost bypass
-- **Frontend:** React + Vite + TypeScript (`frontend/`)
-- **Storage:** JSON files under `data/` (users, services, settings, encrypted credentials)
-- **Logging:** Serilog to console and `logs/jellyking-*.log`
+ASP.NET Core 10 + YARP 2.3 · React + Vite + TypeScript · JSON storage under `data/` · Serilog · encrypted credentials via Data Protection.
