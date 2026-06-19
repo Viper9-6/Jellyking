@@ -14,25 +14,23 @@ The easy way is the prebuilt binary — exactly how Sonarr ships: download a sel
 
 ### Option A — Prebuilt binary (recommended, Sonarr-style)
 
-The repo is **private**, so the server must authenticate to download anything. Pick one:
+The repo is public, so there's no auth — a one-liner installs the latest release:
 
-**A) GitHub CLI (recommended).** Authenticate as your own user; the installer finds that auth even though it runs under `sudo`.
 ```bash
-sudo apt-get install -y gh          # or https://github.com/cli/cli#installation
-gh auth login                       # choose HTTPS, log in as YOUR user
-gh api repos/Viper9-6/Jellyking/contents/deploy/install-native.sh --jq '.content' | base64 -d > install-native.sh
-sudo bash install-native.sh         # latest release → v0.1.0
-# sudo bash install-native.sh v0.1.0   # pin a version
+curl -fsSL https://raw.githubusercontent.com/Viper9-6/Jellyking/main/deploy/install-native.sh | sudo bash
+# or pin a version:  ... | sudo bash -s -- v0.1.0
 ```
 
-**B) Personal Access Token** (needs the `repo` scope — create one at https://github.com/settings/tokens). Pass it through `sudo` explicitly so the root shell sees it:
+The script: detects your architecture (`linux-x64` or `linux-arm64`), downloads the matching `jellyking-linux-<arch>.tar.gz` from the GitHub **Releases** page, extracts it to `/opt/jellyking`, creates a `jellyking` system user, installs `jellyking.service`, and runs `systemctl enable --now jellyking`.
+
 ```bash
-export GH_TOKEN=ghp_xxxxxxxxxxxxxx
-curl -fsSL -H "Authorization: Bearer $GH_TOKEN" https://raw.githubusercontent.com/Viper9-6/Jellyking/main/deploy/install-native.sh -o install-native.sh
-sudo GH_TOKEN="$GH_TOKEN" bash install-native.sh
+systemctl status jellyking          # → active (running)
+# open http://<server-ip>:5656/ → create admin → Add Service
 ```
 
-> Note: a bare `sudo bash install-native.sh` will *not* see a `GH_TOKEN` you exported — that's why the examples pass it as `sudo GH_TOKEN=...` or use `gh` (whose config the installer finds under `~/.config/gh`). If `git clone` of the repo fails, it's the same auth issue — use `gh auth login` or a PAT.
+**Back up `/var/lib/jellyking`** — your accounts, services, settings, encrypted credentials, DataProtection keys, and (if TLS is on) the self-signed cert all live there. The app itself is in `/opt/jellyking` and is safely replaced on each upgrade; the install script backs up the previous install to `/opt/jellyking.bak.<timestamp>`.
+
+> If the plain download fails (corporate proxy or GitHub rate limiting), set `GH_TOKEN=<pat>` and the installer falls back to the authenticated API: `sudo GH_TOKEN="$GH_TOKEN" bash install-native.sh`.
 
 The script: detects your architecture (`linux-x64` or `linux-arm64`), downloads the matching `jellyking-linux-<arch>.tar.gz` from the GitHub **Releases** page, extracts it to `/opt/jellyking`, creates a `jellyking` system user, installs `jellyking.service`, and runs `systemctl enable --now jellyking`.
 
@@ -87,7 +85,7 @@ dotnet publish src/Jellyking.Host -c Release -o /opt/jellyking
 curl -fsSL https://get.docker.com | sh
 sudo usermod -aG docker "$USER"   # log out and back in afterwards
 
-# Clone the private repo (authenticate with a token or SSH key)
+# Clone the repo (it's public now — no auth needed)
 git clone https://github.com/Viper9-6/Jellyking.git
 cd Jellyking
 
@@ -99,7 +97,7 @@ Open **http://<server-ip>:5656/** → you're prompted to **create the admin acco
 
 `docker compose up -d --build` builds the image from `Dockerfile` and mounts `./jellyking-data:/data`. **Back up `./jellyking-data/`** — it holds your accounts, configured services, settings, encrypted credentials, DataProtection keys, and the TLS cert.
 
-> The repo is private, so `git clone` needs credentials: a [Personal Access Token](https://github.com/settings/tokens) (`https://<token>@github.com/Viper9-6/Jellyking.git`) or an SSH remote. On the server you can also just copy the folder over.
+> The repo is public, so a plain `git clone` works with no credentials. (If you kept it private, you'd need a PAT in the URL or an SSH remote.)
 
 ### Bridge networking (if your *arr stack is itself a compose stack)
 

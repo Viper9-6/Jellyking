@@ -6,12 +6,13 @@
 # installs the jellyking.service systemd unit, and starts it.
 #
 # Usage:
+#   curl -fsSL https://raw.githubusercontent.com/Viper9-6/Jellyking/main/deploy/install-native.sh | sudo bash
 #   sudo ./install-native.sh             # latest release
 #   sudo ./install-native.sh v0.1.0      # a specific tag
 #
-# Auth for a PRIVATE repo — pick one:
-#   • `gh auth login` first (gh is the recommended path), or
-#   • export GH_TOKEN=<github-token>   (classic PAT with `repo` scope)
+# The repo is public, so no auth is required. If a plain download fails
+# (corporate proxy, GitHub rate limiting, etc.), set GH_TOKEN=<pat> and the
+# script will use the authenticated GitHub API instead.
 #
 set -euo pipefail
 
@@ -27,18 +28,6 @@ if [[ "$(id -u)" -ne 0 ]]; then
   exit 1
 fi
 
-# If invoked via sudo, the admin normally authenticated as THEMSELVES (gh auth
-# login), so point gh at the original user's config. Without this, gh under sudo
-# would look at root's empty config and fail to download from the private repo.
-if [[ -n "${SUDO_USER:-}" && -z "${GH_CONFIG_DIR:-}" ]]; then
-  SUDO_HOME="$(awk -F: -v u="$SUDO_USER" '$1==u {print $6; exit}' /etc/passwd 2>/dev/null || true)"
-  if [[ -n "$SUDO_HOME" && -d "$SUDO_HOME/.config/gh" ]]; then
-    export GH_CONFIG_DIR="$SUDO_HOME/.config/gh"
-    export HOME="$SUDO_HOME"
-    echo "Running under sudo; using $SUDO_USER's gh auth at $GH_CONFIG_DIR"
-  fi
-fi
-
 # --- detect architecture → release asset ----------------------------------- #
 case "$(uname -m)" in
   x86_64|amd64)        ASSET="jellyking-linux-x64.tar.gz" ;;
@@ -47,62 +36,51 @@ case "$(uname -m)" in
 esac
 echo "Detected arch: $(uname -m)  →  $ASSET"
 
-# --- resolve the release tag ------------------------------------------------ #
-if [[ "$VERSION" == "latest" ]]; then
-  RELEASE_TAG="latest"
-else
-  RELEASE_TAG="tags/$VERSION"
-fi
-
 # --- download the asset ------------------------------------------------------ #
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
-download_with_gh() {
-  command -v gh >/dev/null 2>&1 || return 1
-  gh auth status >/dev/null 2>&1 || return 1
-  echo "Downloading $ASSET ($RELEASE_TAG) via gh…"
-  local args=(--repo "$REPO" --dir "$TMP" --pattern "$ASSET")
-  if [[ "$RELEASE_TAG" == "latest" ]]; then
-    gh release download "${args[@]}"
+download_anonymous() {
+  local url
+  if [[ "$VERSION" == "latest" ]]; then
+    # /releases/latest/download/<asset> redirects to the latest release asset.
+    url="https://github.com/$REPO/releases/latest/download/$ASSET"
   else
-    gh release download "$VERSION" "${args[@]}"
+    url="https://github.com/$REPO/releases/download/$VERSION/$ASSET"
   fi
+  echo "Downloading $ASSET ($VERSION) — $url"
+  curl -fsSL -o "$TMP/$ASSET" "$url"
 }
 
 download_with_token() {
   local token="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
-  if [[ -z "$token" ]]; then return 1; fi
-  echo "Downloading $ASSET ($RELEASE_TAG) via GitHub API…"
-  local api="https://api.github.com/repos/$REPO/releases/$RELEASE_TAG"
+  [[ -z "$token" ]] && return 1
+  echo "Downloading $ASSET ($VERSION) via authenticated GitHub API…"
+  local api_path
+  api_path="$( [[ "$VERSION" == "latest" ]] && echo "latest" || echo "tags/$VERSION" )"
+  local api="https://api.github.com/repos/$REPO/releases/$api_path"
   local url
   url="$(curl -fsSL -H "Authorization: Bearer $token" -H "Accept: application/vnd.github+json" "$api" \
          | grep -oE "https://[^\"[:space:]]*${ASSET}" | head -n1)"
-  if [[ -z "$url" ]]; then
-    echo "Could not find $ASSET in release $RELEASE_TAG." >&2
-    return 1
-  fi
+  [[ -z "$url" ]] && { echo "Could not find $ASSET in release $VERSION." >&2; return 1; }
   curl -fsSL -H "Authorization: Bearer $token" -o "$TMP/$ASSET" "$url"
 }
 
-if ! download_with_gh && ! download_with_token; then
+if ! download_anonymous && ! download_with_token; then
   cat >&2 <<'MSG'
-Could not download the release. This is a PRIVATE repo, so the
-installer must authenticate. Pick ONE and re-run `sudo bash install-native.sh`:
-
-  A) GitHub CLI (recommended):
-       sudo apt-get install -y gh        # or: https://github.com/cli/cli#installation
-       gh auth login                     # authenticate as YOUR user
-       sudo bash install-native.sh       # the script finds your gh auth via sudo
-
-  B) A Personal Access Token (needs the 'repo' scope):
-       export GH_TOKEN=ghp_xxxxxxxxxxxxxx
-       sudo GH_TOKEN="$GH_TOKEN" bash install-native.sh
+Download failed. The repo is public, so this is usually a proxy/firewall
+or transient GitHub issue. Re-run, or set a PAT and retry:
+  export GH_TOKEN=ghp_xxxxxxxxxxxxxx
+  sudo GH_TOKEN="$GH_TOKEN" bash install-native.sh
 MSG
   exit 1
 fi
 
-echo "Downloaded: $TMP/$ASSET"
+if [[ ! -s "$TMP/$ASSET" ]]; then
+  echo "Downloaded file is empty — aborting." >&2
+  exit 1
+fi
+echo "Downloaded: $TMP/$ASSET ($(du -h "$TMP/$ASSET" | cut -f1))"
 
 # --- stop the running service (upgrade) ------------------------------------- #
 if systemctl is-active --quiet jellyking 2>/dev/null; then
