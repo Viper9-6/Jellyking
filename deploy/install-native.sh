@@ -27,6 +27,18 @@ if [[ "$(id -u)" -ne 0 ]]; then
   exit 1
 fi
 
+# If invoked via sudo, the admin normally authenticated as THEMSELVES (gh auth
+# login), so point gh at the original user's config. Without this, gh under sudo
+# would look at root's empty config and fail to download from the private repo.
+if [[ -n "${SUDO_USER:-}" && -z "${GH_CONFIG_DIR:-}" ]]; then
+  SUDO_HOME="$(awk -F: -v u="$SUDO_USER" '$1==u {print $6; exit}' /etc/passwd 2>/dev/null || true)"
+  if [[ -n "$SUDO_HOME" && -d "$SUDO_HOME/.config/gh" ]]; then
+    export GH_CONFIG_DIR="$SUDO_HOME/.config/gh"
+    export HOME="$SUDO_HOME"
+    echo "Running under sudo; using $SUDO_USER's gh auth at $GH_CONFIG_DIR"
+  fi
+fi
+
 # --- detect architecture → release asset ----------------------------------- #
 case "$(uname -m)" in
   x86_64|amd64)        ASSET="jellyking-linux-x64.tar.gz" ;;
@@ -75,9 +87,17 @@ download_with_token() {
 
 if ! download_with_gh && ! download_with_token; then
   cat >&2 <<'MSG'
-Could not download the release. For a private repo you need auth:
-  • install the GitHub CLI and run:  gh auth login
-  • or:  export GH_TOKEN=<github-token with repo scope>
+Could not download the release. This is a PRIVATE repo, so the
+installer must authenticate. Pick ONE and re-run `sudo bash install-native.sh`:
+
+  A) GitHub CLI (recommended):
+       sudo apt-get install -y gh        # or: https://github.com/cli/cli#installation
+       gh auth login                     # authenticate as YOUR user
+       sudo bash install-native.sh       # the script finds your gh auth via sudo
+
+  B) A Personal Access Token (needs the 'repo' scope):
+       export GH_TOKEN=ghp_xxxxxxxxxxxxxx
+       sudo GH_TOKEN="$GH_TOKEN" bash install-native.sh
 MSG
   exit 1
 fi

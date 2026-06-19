@@ -14,16 +14,25 @@ The easy way is the prebuilt binary — exactly how Sonarr ships: download a sel
 
 ### Option A — Prebuilt binary (recommended, Sonarr-style)
 
+The repo is **private**, so the server must authenticate to download anything. Pick one:
+
+**A) GitHub CLI (recommended).** Authenticate as your own user; the installer finds that auth even though it runs under `sudo`.
 ```bash
-# On the server. The repo is private, so authenticate first:
-#   sudo apt-get install -y gh  &&  gh auth login      # recommended
-# or  export GH_TOKEN=<github-token with repo scope>
-#
-# Fetch the installer (gh works for private repos; raw URLs would 401):
+sudo apt-get install -y gh          # or https://github.com/cli/cli#installation
+gh auth login                       # choose HTTPS, log in as YOUR user
 gh api repos/Viper9-6/Jellyking/contents/deploy/install-native.sh --jq '.content' | base64 -d > install-native.sh
-sudo bash install-native.sh            # latest release
-# sudo bash install-native.sh v0.1.0   # pin a specific version
+sudo bash install-native.sh         # latest release → v0.1.0
+# sudo bash install-native.sh v0.1.0   # pin a version
 ```
+
+**B) Personal Access Token** (needs the `repo` scope — create one at https://github.com/settings/tokens). Pass it through `sudo` explicitly so the root shell sees it:
+```bash
+export GH_TOKEN=ghp_xxxxxxxxxxxxxx
+curl -fsSL -H "Authorization: Bearer $GH_TOKEN" https://raw.githubusercontent.com/Viper9-6/Jellyking/main/deploy/install-native.sh -o install-native.sh
+sudo GH_TOKEN="$GH_TOKEN" bash install-native.sh
+```
+
+> Note: a bare `sudo bash install-native.sh` will *not* see a `GH_TOKEN` you exported — that's why the examples pass it as `sudo GH_TOKEN=...` or use `gh` (whose config the installer finds under `~/.config/gh`). If `git clone` of the repo fails, it's the same auth issue — use `gh auth login` or a PAT.
 
 The script: detects your architecture (`linux-x64` or `linux-arm64`), downloads the matching `jellyking-linux-<arch>.tar.gz` from the GitHub **Releases** page, extracts it to `/opt/jellyking`, creates a `jellyking` system user, installs `jellyking.service`, and runs `systemctl enable --now jellyking`.
 
