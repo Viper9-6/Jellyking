@@ -165,6 +165,10 @@ try
                 : Serilog.Events.LogEventLevel.Debug;
     });
 
+    // Strip X-Frame-Options / CSP from proxied service responses so the
+    // WebUIs can be embedded in Jellyking's in-app iframe view.
+    app.UseMiddleware<StripFrameHeadersMiddleware>();
+
     app.UseMiddleware<BasePathRedirectMiddleware>();
 
     app.UseDefaultFiles();

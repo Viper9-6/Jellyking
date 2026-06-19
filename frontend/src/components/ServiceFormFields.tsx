@@ -55,9 +55,9 @@ export function ServiceFormFields({ state, update, mode = 'add' }: Props) {
               onChange={e => update({ port: parseInt(e.target.value) || 0 })} required min={1} max={65535} />
           </div>
           <div className="form-field">
-            <label htmlFor="basePath">Base Path</label>
+            <label htmlFor="basePath">Base Path <span className="settings__hint" style={{ fontWeight: 400 }}>(optional)</span></label>
             <input id="basePath" type="text" value={state.basePath}
-              onChange={e => update({ basePath: e.target.value })} required placeholder="e.g., /sonarr" />
+              onChange={e => update({ basePath: e.target.value })} placeholder="blank = /slug, e.g. /sonarr" />
           </div>
           <div className="form-field">
             <label htmlFor="healthPath">Health Path</label>

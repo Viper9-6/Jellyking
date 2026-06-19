@@ -92,22 +92,45 @@ public sealed class ServicesController : ControllerBase
             return Ok(result);
         }
 
-        // HTTP probe
+        // HTTP probe: health path + the actual page that will be embedded.
         try
         {
             var client = _httpClientFactory.CreateClient("health");
-            var url = $"http://{host}:{port}{healthPath}";
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(HttpContext.RequestAborted);
             cts.CancelAfter(TimeSpan.FromSeconds(5));
-            using var resp = await client.GetAsync(url, cts.Token);
+
+            // Health path
+            var healthUrl = $"http://{host}:{port}{healthPath}";
+            using var healthResp = await client.GetAsync(healthUrl, cts.Token);
             result.Reachable = true;
-            result.HttpStatus = (int)resp.StatusCode;
-            result.Hint = result.HttpStatus switch
+            result.HttpStatus = (int)healthResp.StatusCode;
+
+            // The page Jellyking will load in the embedded view: {basePath}/
+            var basePath = string.IsNullOrWhiteSpace(request.BasePath) ? "/" : request.BasePath.TrimEnd('/') + "/";
+            var pageUrl = $"http://{host}:{port}{basePath}";
+            int pageStatus;
+            try
             {
-                >= 200 and < 300 => "Reachable and healthy.",
-                401 or 403 => "Reachable but requires auth — that's fine; the credential manager handles login.",
-                404 => $"Got 404 at {healthPath}. Set the app's URL Base to its Base Path (e.g. Sonarr → Settings → General → URL Base = /{request.BasePath?.Trim('/')}), restart it, and retry.",
-                _ => $"Got HTTP {result.HttpStatus}. Check the Health Path and that the app is running."
+                using var cts2 = CancellationTokenSource.CreateLinkedTokenSource(HttpContext.RequestAborted);
+                cts2.CancelAfter(TimeSpan.FromSeconds(5));
+                using var pageResp = await client.GetAsync(pageUrl, cts2.Token);
+                pageStatus = (int)pageResp.StatusCode;
+            }
+            catch
+            {
+                pageStatus = -1;
+            }
+            result.PageStatus = pageStatus;
+
+            var bb = request.BasePath?.Trim('/') ?? "slug";
+            result.Hint = (result.HttpStatus, pageStatus) switch
+            {
+                (>= 200 and < 300, >= 200 and < 300) => $"Reachable. Health 200, page {pageStatus} — should render inside Jellyking.",
+                (>= 200 and < 300, 401 or 403) => $"Reachable. Health 200; the page returns {pageStatus} (needs login) — the credential manager will handle it.",
+                (>= 200 and < 300, 404) => $"Health 200 BUT the page at {basePath} returns 404 — it will render blank. Set the app's URL base / root path to /{bb} (Sonarr → URL Base; qBittorrent → WEBUI_ROOTPATH), restart it, and retry.",
+                (401 or 403, _) => "Reachable but requires auth — that's fine; the credential manager handles login.",
+                (404, _) => $"Got 404 at {healthPath}. Set the app's URL Base to its Base Path (… = /{bb}), restart it, and retry.",
+                _ => $"Got HTTP {result.HttpStatus} on the health path. Check the Health Path and that the app is running."
             };
         }
         catch (Exception ex) when (ex is System.Net.Http.HttpRequestException or TaskCanceledException)
@@ -146,13 +169,17 @@ public sealed class ServicesController : ControllerBase
         if (await _serviceStore.SlugExistsAsync(slug))
             return BadRequest(new { message = "A service with that slug already exists." });
 
+        var basePath = string.IsNullOrWhiteSpace(request.BasePath)
+            ? "/" + slug
+            : NormaliseBasePath(request.BasePath);
+
         var service = new Service
         {
             Slug = slug,
             Name = request.Name.Trim(),
             Host = request.Host.Trim(),
             Port = request.Port,
-            BasePath = NormaliseBasePath(request.BasePath),
+            BasePath = basePath,
             HealthPath = request.HealthPath?.Trim() ?? string.Empty,
             Icon = request.Icon?.Trim() ?? slug,
             WebSocketPaths = request.WebSocketPaths?.Trim() ?? string.Empty,
@@ -402,5 +429,6 @@ public sealed record ServiceTestResult
     public bool TcpOk { get; set; }
     public bool Reachable { get; set; }
     public int? HttpStatus { get; set; }
+    public int? PageStatus { get; set; }
     public string Hint { get; set; } = string.Empty;
 }

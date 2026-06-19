@@ -6,6 +6,7 @@ import { AddServiceModal } from './components/AddServiceModal'
 import { ChangePasswordModal } from './components/ChangePasswordModal'
 import { CredentialsModal } from './components/CredentialsModal'
 import { EditServiceModal } from './components/EditServiceModal'
+import { ServiceFrame } from './components/ServiceFrame'
 import { SettingsPage } from './pages/SettingsPage'
 import { SetupPage } from './pages/SetupPage'
 import { LoginPage } from './pages/LoginPage'
@@ -24,6 +25,7 @@ export default function App() {
   const [showChangePassword, setShowChangePassword] = useState(false)
   const [credSvc, setCredSvc] = useState<ServiceStatus | null>(null)
   const [editSvc, setEditSvc] = useState<ServiceStatus | null>(null)
+  const [activeSvc, setActiveSvc] = useState<ServiceStatus | null>(null)
   const [settings, setSettings] = useState<SettingsDto | null>(null)
   const [now, setNow] = useState(new Date())
 
@@ -54,6 +56,10 @@ export default function App() {
 
   if (isSetupRequired) return <SetupGate />
   if (!user) return <LoginGate />
+
+  if (activeSvc) {
+    return <ServiceFrame service={activeSvc} onBack={() => setActiveSvc(null)} />
+  }
 
   const isAdmin = user.role === 'Admin'
   const title = settings?.title ?? 'Jellyking'
@@ -151,6 +157,7 @@ export default function App() {
               onDelete={isAdmin ? handleDeleteService : undefined}
               onEdit={isAdmin ? (svc) => setEditSvc(svc) : undefined}
               onEditCredentials={isAdmin ? (svc) => setCredSvc(svc) : undefined}
+              onOpen={(svc) => setActiveSvc(svc)}
             />
             )}
           </>

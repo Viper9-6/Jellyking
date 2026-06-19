@@ -7,6 +7,7 @@ interface Props {
   onDelete?: (id: string) => void
   onEdit?: (svc: ServiceStatus) => void
   onEditCredentials?: (svc: ServiceStatus) => void
+  onOpen?: (svc: ServiceStatus) => void
 }
 
 function timeSince(iso: string, now: Date): string {
@@ -17,11 +18,12 @@ function timeSince(iso: string, now: Date): string {
   return `${Math.floor(seconds / 3600)}h ago`
 }
 
-export function ServiceGrid({ services, now, onDelete, onEdit, onEditCredentials }: Props) {
+export function ServiceGrid({ services, now, onDelete, onEdit, onEditCredentials, onOpen }: Props) {
   return (
     <div className="grid">
       {services.map(svc => {
         const href = `${svc.basePath}/`
+        const open = () => { if (svc.isUp && onOpen) onOpen(svc) }
         return (
           <article key={svc.id} className={`card ${svc.isUp ? '' : 'card--offline'}`}>
             <div className="card__top">
@@ -33,46 +35,37 @@ export function ServiceGrid({ services, now, onDelete, onEdit, onEditCredentials
                   onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
                 />
               </div>
-              {(onDelete || onEdit || onEditCredentials) && (
-                <div className="card__actions">
-                  {onEdit && (
-                    <button
-                      className="card__iconbtn"
-                      title="Edit service"
-                      onClick={() => onEdit(svc)}
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
-                    </button>
-                  )}
-                  {onEditCredentials && (
-                    <button
-                      className="card__iconbtn"
-                      title="Auto-login credentials"
-                      onClick={() => onEditCredentials(svc)}
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.778-7.778zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4" /></svg>
-                    </button>
-                  )}
-                  {onDelete && (
-                    <button
-                      className="card__iconbtn"
-                      title={`Remove ${svc.name}`}
-                      onClick={() => onDelete(svc.id)}
-                    >
-                      ×
-                    </button>
-                  )}
-                </div>
-              )}
+              <div className="card__actions">
+                {onOpen && (
+                  <a className="card__iconbtn" href={href} target="_blank" rel="noopener noreferrer"
+                     title="Open in new tab" tabIndex={svc.isUp ? 0 : -1}
+                     onClick={e => !svc.isUp && e.preventDefault()}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6" /><path d="M10 14 21 3" /><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /></svg>
+                  </a>
+                )}
+                {onEdit && (
+                  <button className="card__iconbtn" title="Edit service" onClick={() => onEdit(svc)}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
+                  </button>
+                )}
+                {onEditCredentials && (
+                  <button className="card__iconbtn" title="Auto-login credentials" onClick={() => onEditCredentials(svc)}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.778-7.778zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4" /></svg>
+                  </button>
+                )}
+                {onDelete && (
+                  <button className="card__iconbtn" title={`Remove ${svc.name}`} onClick={() => onDelete(svc.id)}>×</button>
+                )}
+              </div>
             </div>
 
-            <div className="card__body">
+            <div className="card__body" onClick={open} role={onOpen ? 'button' : undefined}
+                 tabIndex={onOpen && svc.isUp ? 0 : undefined}
+                 style={onOpen && svc.isUp ? { cursor: 'pointer' } : undefined}
+                 onKeyDown={e => { if (onOpen && svc.isUp && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); open() } }}>
               <h3 className="card__title">
                 {svc.name}
-                <span
-                  className={`card__dot card__dot--${svc.isUp ? 'up' : 'down'}`}
-                  aria-label={svc.isUp ? 'online' : 'offline'}
-                />
+                <span className={`card__dot card__dot--${svc.isUp ? 'up' : 'down'}`} aria-label={svc.isUp ? 'online' : 'offline'} />
                 {svc.authType && svc.authType !== 'none' && (
                   <span className="card__authtag" title={`Auto-login: ${svc.authType}`}>auto</span>
                 )}
@@ -82,17 +75,14 @@ export function ServiceGrid({ services, now, onDelete, onEdit, onEditCredentials
               {svc.downReason && <p className="card__reason">{svc.downReason}</p>}
             </div>
 
-            <a
-              href={href}
-              target="_blank"
-              rel="noopener noreferrer"
+            <button
+              type="button"
               className={`card__action ${svc.isUp ? '' : 'card__action--disabled'}`}
-              aria-disabled={!svc.isUp}
-              tabIndex={svc.isUp ? 0 : -1}
-              onClick={e => !svc.isUp && e.preventDefault()}
+              disabled={!svc.isUp}
+              onClick={open}
             >
               Open
-            </a>
+            </button>
 
             <span className="card__checked">Checked {timeSince(svc.lastChecked, now)}</span>
           </article>

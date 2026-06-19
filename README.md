@@ -1,8 +1,9 @@
 # Jellyking ♔
 
-A single-container media-stack dashboard that proxies your native service WebUIs (Jellyfin, qBittorrent, Sonarr, Radarr, Prowlarr, Lidarr, Readarr, Bazarr, Jellyseerr, SABnzbd) through one origin using [YARP](https://learn.microsoft.com/aspnet/core/fundamentals/servers/yarp/) — **no iframes**, no per-service reverse-proxy config.
+A single-container media-stack dashboard that proxies your native service WebUIs (Jellyfin, qBittorrent, Sonarr, Radarr, Prowlarr, Lidarr, Readarr, Bazarr, Jellyseerr, SABnzbd) through one origin using [YARP](https://learn.microsoft.com/aspnet/core/fundamentals/servers/yarp/), and renders them **in-app** — click a service and its dashboard opens inside Jellyking (same-origin, no cross-origin iframe errors).
 
-- **Add services at runtime** from the admin UI — any host + port + base path, multiple instances allowed (e.g. two Radarrs on different ports).
+- **Add services at runtime** from the admin UI — any host + port (base path optional, defaults to `/<slug>`), multiple instances allowed (e.g. two Radarrs on different ports).
+- **In-app rendering** — clicking a service opens its WebUI embedded in Jellyking (not a new tab). The proxy strips `X-Frame-Options`/CSP so apps that normally refuse to be framed embed cleanly.
 - **Auto-login / credential manager** — store an API key or qBittorrent login so each WebUI opens already signed in (secrets encrypted at rest).
 - **Accounts & users** — first-run admin setup, login, self-service password change, admin user management.
 - **Local access bypass** (optional) and **opt-in HTTPS**.
@@ -119,11 +120,11 @@ In the UI: **Dashboard → Add Service**. Pick a template (or Blank) and fill in
 | Name         | `Sonarr`               | Display name                                                      |
 | Host         | `localhost` / `sonarr` | Hostname/IP of the service (localhost on host net, compose name in bridge) |
 | Port         | `8989`                 | The service's port                                                 |
-| Base Path    | `/sonarr`              | The subpath Jellyking serves it on — **must match the service's own URL Base** |
+| Base Path    | `/sonarr` (optional)   | The subpath Jellyking serves it on; blank = `/<slug>`. **Must match the service's own URL base / root path** |
 | Health Path  | `/sonarr/api/v3/system/status` | HTTP GET path that returns 2xx when the service is up     |
 | Auto-login   | see §4                 | Optional credential so the WebUI opens signed in                  |
 
-Saved services are probed every ~30s; only **up** services are reachable through the proxy. Cards open the WebUI through Jellyking at `http://<host>:5656<base path>/`.
+Saved services are probed every ~30s; only **up** services are reachable. Click a card to open the WebUI **inside Jellyking**; the ⤴ icon on a card opens it in a new tab instead.
 
 ## 4. One-time per-service setup (base URL + credential)
 
@@ -139,7 +140,7 @@ Each *arr must be told it's served from its subpath, then restarted **once**:
 | Readarr     | Settings → General → URL Base                   | `/readarr`     |
 | Jellyseerr  | Settings → General → URL Base                   | `/jellyseerr`  |
 | Bazarr      | Settings → General → Base URL                   | `/bazarr`      |
-| qBittorrent | Tools → Options → Web UI → `WEBUI_ROOTPATH`     | `/qbit`        |
+| qBittorrent | `WEBUI_ROOTPATH` env var (or `WebUI\\RootPath` in qBittorrent.conf)  | `/qbit`        |
 | SABnzbd     | Config → General → URL Base                     | `/sabnzbd`     |
 
 ### Auto-login credential (set when adding/editing the service)
