@@ -12,15 +12,18 @@ public sealed class ServicesController : ControllerBase
     private readonly IServiceStore _serviceStore;
     private readonly ICredentialStore _credentialStore;
     private readonly ServiceDetector _detector;
+    private readonly IHttpClientFactory _httpClientFactory;
 
     public ServicesController(
         IServiceStore serviceStore,
         ICredentialStore credentialStore,
-        ServiceDetector detector)
+        ServiceDetector detector,
+        IHttpClientFactory httpClientFactory)
     {
         _serviceStore = serviceStore;
         _credentialStore = credentialStore;
         _detector = detector;
+        _httpClientFactory = httpClientFactory;
     }
 
     /// <summary>
@@ -51,6 +54,82 @@ public sealed class ServicesController : ControllerBase
             return NotFound();
 
         return Ok(ServiceStatusDto.From(status));
+    }
+
+
+    /// <summary>
+    /// Probes a service address (without saving it) so the Add/Edit modal can
+    /// show whether the upstream is reachable and configured for its base
+    /// path. The most common failure is a 404 because the app's URL Base
+    /// hasn't been set to match BasePath.
+    /// </summary>
+    [HttpPost("test")]
+    [Authorize(Policy = "Admin")]
+    [ProducesResponseType<ServiceTestResult>(StatusCodes.Status200OK)]
+    public async Task<IActionResult> Test([FromBody] ServiceTestRequest request)
+    {
+        var host = request.Host?.Trim() ?? string.Empty;
+        var port = request.Port;
+        var healthPath = string.IsNullOrWhiteSpace(request.HealthPath) ? "/" : request.HealthPath.Trim();
+        if (!healthPath.StartsWith('/')) healthPath = "/" + healthPath;
+
+        var result = new ServiceTestResult { Host = host, Port = port, HealthPath = healthPath };
+
+        // TCP probe
+        try
+        {
+            using var tcp = new System.Net.Sockets.TcpClient();
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(HttpContext.RequestAborted);
+            cts.CancelAfter(TimeSpan.FromSeconds(3));
+            await tcp.ConnectAsync(host, port, cts.Token);
+            result.TcpOk = true;
+        }
+        catch
+        {
+            result.TcpOk = false;
+            result.Reachable = false;
+            result.Hint = $"Nothing is listening on {host}:{port}, or the host is wrong.";
+            return Ok(result);
+        }
+
+        // HTTP probe
+        try
+        {
+            var client = _httpClientFactory.CreateClient("health");
+            var url = $"http://{host}:{port}{healthPath}";
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(HttpContext.RequestAborted);
+            cts.CancelAfter(TimeSpan.FromSeconds(5));
+            using var resp = await client.GetAsync(url, cts.Token);
+            result.Reachable = true;
+            result.HttpStatus = (int)resp.StatusCode;
+            result.Hint = result.HttpStatus switch
+            {
+                >= 200 and < 300 => "Reachable and healthy.",
+                401 or 403 => "Reachable but requires auth — that's fine; the credential manager handles login.",
+                404 => $"Got 404 at {healthPath}. Set the app's URL Base to its Base Path (e.g. Sonarr → Settings → General → URL Base = /{request.BasePath?.Trim('/')}), restart it, and retry.",
+                _ => $"Got HTTP {result.HttpStatus}. Check the Health Path and that the app is running."
+            };
+        }
+        catch (Exception ex) when (ex is System.Net.Http.HttpRequestException or TaskCanceledException)
+        {
+            result.Reachable = false;
+            result.Hint = $"Port is open but the HTTP health check failed: {ex.Message}";
+        }
+
+        return Ok(result);
+    }
+
+
+    /// <summary>Returns the full stored config for a service (no secret) so the edit modal can prefill.</summary>
+    [HttpGet("{id:guid}/config")]
+    [Authorize(Policy = "Admin")]
+    [ProducesResponseType<ServiceDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetConfig(Guid id)
+    {
+        var svc = await _serviceStore.GetByIdAsync(id);
+        if (svc is null) return NotFound();
+        return Ok(Map(svc));
     }
 
     /// <summary>Create a new service. Triggers proxy reload.</summary>
@@ -305,4 +384,23 @@ public sealed record UpdateServiceRequest
     public string? Username { get; set; }
     /// <summary>Write-only password (qbittorrent). null = unchanged.</summary>
     public string? Password { get; set; }
+}
+
+public sealed record ServiceTestRequest
+{
+    public string? Host { get; set; }
+    public int Port { get; set; }
+    public string? BasePath { get; set; }
+    public string? HealthPath { get; set; }
+}
+
+public sealed record ServiceTestResult
+{
+    public string Host { get; set; } = string.Empty;
+    public int Port { get; set; }
+    public string HealthPath { get; set; } = string.Empty;
+    public bool TcpOk { get; set; }
+    public bool Reachable { get; set; }
+    public int? HttpStatus { get; set; }
+    public string Hint { get; set; } = string.Empty;
 }

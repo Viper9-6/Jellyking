@@ -51,3 +51,22 @@ export async function fetchTemplates(): Promise<Service[]> {
   if (!res.ok) throw new Error(`Failed to fetch templates: ${res.status}`)
   return res.json()
 }
+
+export async function fetchServiceConfig(id: string): Promise<Service> {
+  const res = await fetch(`/api/v1/services/${id}/config`)
+  if (!res.ok) throw new Error(`Failed to load service config: ${res.status}`)
+  return res.json()
+}
+
+export async function testService(req: import('../types').ServiceTestRequest): Promise<import('../types').ServiceTestResult> {
+  const res = await fetch('/api/v1/services/test', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req),
+  })
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ message: 'Connection test failed' }))
+    throw new Error(error.message || 'Connection test failed')
+  }
+  return res.json()
+}

@@ -5,6 +5,7 @@ import { ServiceGrid } from './components/ServiceGrid'
 import { AddServiceModal } from './components/AddServiceModal'
 import { ChangePasswordModal } from './components/ChangePasswordModal'
 import { CredentialsModal } from './components/CredentialsModal'
+import { EditServiceModal } from './components/EditServiceModal'
 import { SettingsPage } from './pages/SettingsPage'
 import { SetupPage } from './pages/SetupPage'
 import { LoginPage } from './pages/LoginPage'
@@ -22,6 +23,7 @@ export default function App() {
   const [showAddService, setShowAddService] = useState(false)
   const [showChangePassword, setShowChangePassword] = useState(false)
   const [credSvc, setCredSvc] = useState<ServiceStatus | null>(null)
+  const [editSvc, setEditSvc] = useState<ServiceStatus | null>(null)
   const [settings, setSettings] = useState<SettingsDto | null>(null)
   const [now, setNow] = useState(new Date())
 
@@ -147,6 +149,7 @@ export default function App() {
               services={services}
               now={now}
               onDelete={isAdmin ? handleDeleteService : undefined}
+              onEdit={isAdmin ? (svc) => setEditSvc(svc) : undefined}
               onEditCredentials={isAdmin ? (svc) => setCredSvc(svc) : undefined}
             />
             )}
@@ -169,6 +172,14 @@ export default function App() {
         <CredentialsModal
           service={credSvc}
           onClose={() => setCredSvc(null)}
+          onSaved={refresh}
+        />
+      )}
+
+      {editSvc && (
+        <EditServiceModal
+          serviceId={editSvc.serviceId}
+          onClose={() => setEditSvc(null)}
           onSaved={refresh}
         />
       )}

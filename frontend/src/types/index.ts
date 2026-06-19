@@ -75,3 +75,28 @@ export interface UpdateSettingsRequest {
   theme?: string
   localAccessEnabled?: boolean
 }
+
+export interface ServiceTestRequest {
+  host: string
+  port: number
+  basePath: string
+  healthPath: string
+}
+
+export interface ServiceTestResult {
+  host: string
+  port: number
+  healthPath: string
+  tcpOk: boolean
+  reachable: boolean
+  httpStatus: number | null
+  hint: string
+}
+
+// Editable form state used by the Add/Edit modals: service fields plus the
+// write-only credential material (secret for apikey/jellyfin, user+pass for qbit).
+export type ServiceFormState = Omit<Service, 'id'> & {
+  secret: string
+  username: string
+  password: string
+}

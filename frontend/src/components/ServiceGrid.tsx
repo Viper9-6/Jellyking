@@ -5,6 +5,7 @@ interface Props {
   services: ServiceStatus[]
   now: Date
   onDelete?: (id: string) => void
+  onEdit?: (svc: ServiceStatus) => void
   onEditCredentials?: (svc: ServiceStatus) => void
 }
 
@@ -16,7 +17,7 @@ function timeSince(iso: string, now: Date): string {
   return `${Math.floor(seconds / 3600)}h ago`
 }
 
-export function ServiceGrid({ services, now, onDelete, onEditCredentials }: Props) {
+export function ServiceGrid({ services, now, onDelete, onEdit, onEditCredentials }: Props) {
   return (
     <div className="grid">
       {services.map(svc => {
@@ -32,8 +33,17 @@ export function ServiceGrid({ services, now, onDelete, onEditCredentials }: Prop
                   onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
                 />
               </div>
-              {(onDelete || onEditCredentials) && (
+              {(onDelete || onEdit || onEditCredentials) && (
                 <div className="card__actions">
+                  {onEdit && (
+                    <button
+                      className="card__iconbtn"
+                      title="Edit service"
+                      onClick={() => onEdit(svc)}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
+                    </button>
+                  )}
                   {onEditCredentials && (
                     <button
                       className="card__iconbtn"
